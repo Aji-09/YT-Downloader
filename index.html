@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+<title>YouTube DL - By Cjey</title>
+<style>
+  #progress-bar {
+    transition: width 0.2s ease;
+  }
+</style>
+</head>
+<body class="h-screen w-screen flex items-center justify-center bg-[url('./assets/bg.svg')] bg-cover bg-center bg-no-repeat text-white">
+<div class="bg-white/10 backdrop-blur-md border border-white/20 shadow-lg rounded-2xl p-8 max-w-xl w-full text-center">
+  <h1 class="text-4xl font-extrabold mb-4"><span class="text-red-500">You</span><span class="text-gray-300">tube</span> Downloader</h1>
+  <p class="text-gray-200 text-lg mb-6">Paste a YouTube link below to download.</p>
+
+  <div class="flex items-center gap-2">
+    <input id="url-input" type="text" placeholder="Enter YouTube link..."
+      class="flex-grow px-4 py-3 rounded-xl bg-white/20 text-white placeholder-gray-300 focus:outline-none focus:ring-2 focus:ring-red-500"/>
+    <button id="download-btn" class="px-6 py-3 rounded-xl bg-red-500 hover:bg-red-600 transition text-white font-semibold shadow-md">Download</button>
+  </div>
+
+  <div id="message" class="mt-4 text-lg"></div>
+
+  <!-- Spinner (hidden initially) -->
+  <div id="spinner" class="mt-4 hidden">
+    <div class="inline-block w-8 h-8 border-4 border-white border-t-transparent rounded-full animate-spin"></div>
+  </div>
+
+  <!-- Progress bar (hidden initially) -->
+  <div id="progress-container" class="mt-4 hidden">
+    <div class="w-full bg-white/20 backdrop-blur-md rounded-full h-4">
+      <div id="progress-bar" class="bg-red-500 h-4 rounded-full w-0"></div>
+    </div>
+    <p id="progress-text" class="mt-2 text-white">0%</p>
+  </div>
+</div>
+
+<script>
+const downloadBtn = document.getElementById('download-btn');
+const urlInput = document.getElementById('url-input');
+const messageDiv = document.getElementById('message');
+const progressBar = document.getElementById('progress-bar');
+const progressText = document.getElementById('progress-text');
+const progressContainer = document.getElementById('progress-container');
+const spinner = document.getElementById('spinner');
+
+let evtSource = null;
+
+downloadBtn.addEventListener('click', async () => {
+  const url = urlInput.value.trim();
+  if (!url) {
+    messageDiv.innerText = 'Please enter a URL.';
+    messageDiv.style.color = 'red';
+    return;
+  }
+
+  // Show spinner and progress bar
+  progressContainer.classList.remove('hidden');
+  spinner.classList.remove('hidden');
+
+  messageDiv.innerText = ''; // clear text
+  progressBar.style.width = '0%';
+  progressText.innerText = '0%';
+
+  // Start backend download
+  const startResp = await fetch('/start', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({url})
+  });
+
+  if (!startResp.ok) {
+    spinner.classList.add('hidden');
+    messageDiv.innerText = 'Failed to start download.';
+    messageDiv.style.color = 'red';
+    return;
+  }
+
+  if (evtSource) evtSource.close();
+  evtSource = new EventSource(`/progress?url=${encodeURIComponent(url)}`);
+
+  evtSource.onmessage = (e) => {
+    const data = parseFloat(e.data);
+    if (isNaN(data)) return;
+
+    progressBar.style.width = `${data}%`;
+    progressText.innerText = `${data.toFixed(1)}%`;
+
+    if (data >= 100) {
+      spinner.classList.add('hidden');
+      messageDiv.innerText = 'Download complete! Sending file...';
+      messageDiv.style.color = 'green';
+
+      const link = document.createElement('a');
+      link.href = `/download?url=${encodeURIComponent(url)}`;
+      link.download = '';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      messageDiv.innerText = 'File will be downloaded';
+      evtSource.close();
+    } else if (data < 0) {
+      spinner.classList.add('hidden');
+      messageDiv.innerText = 'Error occurred during download.';
+      messageDiv.style.color = 'red';
+      evtSource.close();
+    }
+  };
+
+  evtSource.onerror = () => {
+    spinner.classList.add('hidden');
+    messageDiv.innerText = 'Error connecting to server.';
+    messageDiv.style.color = 'red';
+    evtSource.close();
+  };
+});
+</script>
+</body>
+</html>
